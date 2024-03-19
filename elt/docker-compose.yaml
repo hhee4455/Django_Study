@@ -1,0 +1,72 @@
+version: '3'
+
+services:
+  # Source PostgreSQL 서비스 정의
+  source_postgres:
+    image: postgres:latest
+    ports:
+      - "5433:5432"  # 호스트의 5433 포트를 컨테이너의 5432 포트로 포워딩
+    networks:
+      - elt_network  # elt_network에 연결
+    environment:
+      POSTGRES_DB: source_db  # 데이터베이스 이름
+      POSTGRES_USER: postgres  # 사용자 이름
+      POSTGRES_PASSWORD: secret  # 비밀번호
+    volumes:
+      - ./source_db_init/init.sql:/docker-entrypoint-initdb.d/init.sql  # 데이터베이스 초기화 스크립트 볼륨 마운트
+
+  # Destination PostgreSQL 서비스 정의
+  destination_postgres:
+    image: postgres:latest
+    ports:
+      - "5434:5432"  # 호스트의 5434 포트를 컨테이너의 5432 포트로 포워딩
+    networks:
+      - elt_network  # elt_network에 연결
+    depends_on:
+      - source_postgres  # source_postgres 서비스가 시작되기를 기다림
+    environment:
+      POSTGRES_DB: destination_db  # 데이터베이스 이름
+      POSTGRES_USER: postgres  # 사용자 이름
+      POSTGRES_PASSWORD: secret  # 비밀번호
+
+  # ELT 스크립트 서비스 정의
+  elt_script:
+    build:
+      context: ./elt_script  # Dockerfile 및 elt_script.py가 있는 디렉터리
+      dockerfile: Dockerfile  # Dockerfile의 이름 (기본값이 "Dockerfile"이 아닌 경우 여기에 지정)
+    command: [ "python", "elt_script.py" ]  # 실행할 명령
+    networks:
+      - elt_network  # elt_network에 연결
+    depends_on:
+      - destination_postgres  # destination_postgres 서비스가 시작되기를 기다림
+
+  # DBT 서비스 정의
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.4.7
+    command:
+      [
+        "run",
+        "--profiles-dir",
+        "/root",
+        "--project-dir",
+        "/dbt",
+        "--full-refresh"
+      ]  # 실행할 명령
+    networks:
+      - elt_network  # elt_network에 연결
+    volumes:
+      - ./postgres_transformations:/dbt  # DBT 프로젝트 디렉터리 마운트
+      - ~/.dbt:/root  # DBT 프로필 디렉터리 마운트
+    depends_on:
+      - elt_script  # elt_script 서비스가 시작되기를 기다림
+    environment:
+      DBT_PROFILE: default  # DBT 프로필 이름
+      DBT_TARGET: dev  # DBT 타겟 환경
+
+networks:
+  # ELT 네트워크 정의
+  elt_network:
+    driver: bridge  # 브릿지 네트워크 사용
+
+volumes:
+  destination_db_data:  # 목적지 데이터베이스 데이터를 저장할 볼륨
