@@ -32,7 +32,7 @@ services:
   # ELT 스크립트 서비스 정의
   elt_script:
     build:
-      context: ./elt_script  # Dockerfile 및 elt_script.py가 있는 디렉터리
+      context: ./elt  # Dockerfile 및 elt_script.py가 있는 디렉터리
       dockerfile: Dockerfile  # Dockerfile의 이름 (기본값이 "Dockerfile"이 아닌 경우 여기에 지정)
     command: [ "python", "elt_script.py" ]  # 실행할 명령
     networks:
